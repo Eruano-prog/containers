@@ -126,7 +126,13 @@ CPU-нагрузка расходует до одного логического
 
 ![alt text]({CF8511AE-45F2-49C3-84B6-2CFD92890A91}.png)
 
-Предстоит описать сокращение capabilities, профиль seccomp и наблюдаемые отказы привилегированного действия и заблокированного syscall.
+### seccomp
+
+![alt text]({4DA7CF33-CE4A-4322-BA1D-DE20AE4DC142}.png)
+
+![alt text]({B0F4E7EF-0DEF-4F24-B7FD-D90C3796F74F}.png)
+
+![alt text]({51DE07EC-452A-41F1-BEF6-BC3C444FE6B6}.png)
 
 ## Часть 5. Собственный запуск и сравнение с Docker
 
