@@ -252,7 +252,21 @@ ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf8820b68f595c695e4a9
 
 ## Часть 7. GVisor и границы изоляции
 
-Предстоит выполнить запуск через `runsc`, сравнить его с Docker и собственным скриптом, объяснить роль общего ядра и дополнительную границу gVisor.
+Исходная проверка пользователем: `command -v runsc` не вывел путь; Docker Runtimes содержит `runc` и `io.containerd.runc.v2`, runtime `runsc` не зарегистрирован. На момент проверки работали тестовые `lab1-images-single` и `lab1-images-multi` (Up 39 hours).
+
+Пользователь остановил оба тестовых контейнера; последующий `docker ps` показал пустой список. Проверка `/etc/docker/daemon.json`: файл отсутствует.
+
+[Подготовка gVisor](part7-gvisor.md) содержит команды добавления официального apt-репозитория, установки `runsc`, проверки созданной конфигурации и применения её перезапуском Docker. Пакет установлен, запуск через gVisor ещё не выполнен; сравнение изоляции и выводы будут добавлены по фактическим результатам.
+
+Подтверждена установка пакета `runsc 20261012.0`: `runsc version release-20261012.0`, OCI spec `1.2.1`. Сразу после установки автоматическая регистрация не произошла: `/etc/docker/daemon.json` отсутствовал, Docker `active`, `Default=runc`, runtime `runsc` не перечислен. Проверка `dockerd --validate` завершилась ошибкой отсутствия файла, поэтому перезапуск после `&&` не выполнялся. Причина поведения установщика не установлена. Затем пользователь выполнил `sudo runsc install`: создана запись `runtimes.runsc.path=/usr/bin/runsc` в `daemon.json`. Проверка: `configuration OK`; после перезапуска Docker `active`, `Default=runc`, runtime `runsc` зарегистрирован. В объявленных параметрах runtime `platform=systrap`; фактический запуск приложения пока не проверен. Подготовлены команды запуска `lab1-api:multi` с `--runtime=runsc`, проверки HTTP и процессов хоста.
+
+![alt text]({42575D8B-DCC2-48B3-BDD8-92F0FEC9CFE4}.png)
+
+
+Подтверждён запуск `lab1-api:multi` через `runsc`: контейнер `c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b`, Status=running, OOMKilled=false, Error пустой. Лог приложения: PID=1. HTTP на `127.0.0.1:8083/health`: 200 OK, тело `ok`. Docker State.Pid=1792355; на хосте это `runsc-sandbox` (UID 0), а не обычный процесс `/lab1-serv`. Также видны `runsc-gofer` PID 1792349, `runsc-fd-parking` и процессы `[gvisor_sentry]`. Командная строка sandbox содержит `--systemd-cgroup=true`, `--cpu-quota 50000`, `--cpu-period 100000`, `--total-memory 134217728`. Эти аргументы не заменяют чтение фактических лимитов cgroup. UID sandbox не является UID приложения внутри gVisor.
+
+![alt text]({CC244158-A2A1-4651-88D6-D6F57D6D9526}.png)
+
 
 ## Часть 8. Мониторинг
 
