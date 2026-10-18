@@ -180,11 +180,75 @@ Docker на сервере проверен: Client/Engine `26.1.5+dfsg1`, conta
 
 ## Часть 6. Образы и хранение данных
 
+Digest: sha256:20a022e5112a144aa7b7aeb3f22ebf2cdaefcc4aac0d64e8deeee8cdc18b9c0f
+Status: Downloaded newer image for golang:1.24.4
+docker.io/library/golang:1.24.4
+
 Подготовлены [обычный Dockerfile](Dockerfile.single), [multi-stage Dockerfile](Dockerfile), [go.mod](go.mod) и [.dockerignore](.dockerignore) по [согласованному контракту](images-spec.md). [План выполнения](part6-plan.md); [команды первого этапа](part6-images.md).
 
 Обе сборки используют Go 1.24.4, одинаковые исходники и статическую компиляцию с CGO_ENABLED=0. Обычный образ сохраняет toolchain, конечная стадия multi-stage основана на scratch и содержит только бинарник. Оба образа запускают сервис от UID/GID 1000:1000 на порту 8080.
 
-Статус: сборки, HTTP-проверки, измерение размеров/слоёв и кэш ещё не подтверждены. Файловые эксперименты с writable layer и volume выполняются после проверки образов. Фактические значения и скриншоты будут добавлены по результатам пользователя.
+Пользователь подтвердил запуск обоих образов 2026-10-17. Контейнер single: `1ebb5f3658ecef706cdeac1c04cd09f4ab94231196283951a2c015df8c552445`, порт хоста 8081; multi: `8ef2bda454e69818dfc9c1e98538ead83330040d0860ef0eb0070597d1f6cdda`, порт 8082. Оба сервиса вывели PID=1 и вернули HTTP 200 с Content-Length: 2. Скриншот `{9F153B32-E711-4445-97A5-38040391AE98}.png` дополнительно подтверждает `single: OK` и `multi: OK`: точное тело `ok` и HTTP 200 для обоих образов.
+
+Для обоих тегов image inspect подтвердил `User=1000:1000`, `Entrypoint=["/lab1-serv"]` и `Ports={"8080/tcp":{}}`. Команды измерения размеров, файловых слоёв и кэша добавлены в [инструкцию](part6-images.md). Измерения и повторное использование кэша подтверждены выводами пользователя и скриншотами.
+
+| Образ | Размер, байт | Файловые слои | ID |
+|---|---:|---:|---|
+| `lab1-api:single` | 945094396 | 10 | `sha256:e8aa0744cec3941307b3887c191a7a93fd030c017a7266be58a99bad5c105437` |
+| `lab1-api:multi` | 8089538 | 1 | `sha256:d12de3ca117b9bc2a055d7dcc8751fe3e95681e3a8d883dde41670391533087a` |
+
+Размер multi примерно в 116,83 раза меньше single. История single содержит Go SDK, базовые пакеты и слой компиляции около 91,6 MB. История multi содержит только копирование бинарника около 8,09 MB; USER, EXPOSE и ENTRYPOINT представлены записями метаданных по 0 B. Число файловых слоёв подтверждено через RootFS.Layers, а не подсчётом строк history.
+
+Builder: BuildKit, instance `default`, driver `docker`. Повторные сборки показали CACHED для WORKDIR, COPY go.mod/main.go и RUN go build в обоих образах. В multi также переиспользован COPY из стадии build. ID после повторных сборок совпадают с исходными измерениями.
+
+Сравнение образов и кэша выполнено, проверка понимания пройдена. Команды опыта с writable layer добавлены в [инструкцию](part6-images.md): запись файла, restart того же контейнера и пересоздание из того же ID образа. Опыт с writable layer подтверждён выводом пользователя: в контейнер `b85ec0619492c22edbc6b139743700a9402654233a987929731e554777ed23d0` записан `/tmp/lab1-proof.txt` со строкой `lab1-proof`. `docker diff` показал `C /tmp` и `A /tmp/lab1-proof.txt`. После restart ID остался прежним, содержимое сохранилось. После stop/rm создан новый контейнер `dfc29e06e79553854a63551d79754e04ad6351cb075a792a9ed7f6477d839bcc` из того же ID образа; проверка подтвердила отсутствие файла. Вывод: restart сохраняет writable layer, удаление контейнера уничтожает его; исходный образ не изменяется. Проверка понимания пройдена.
+
+Подготовлены команды named volume `lab1-images-data` в [инструкции](part6-images.md). Опыт с named volume подтверждён пользователем 2026-10-19. Создан новый `lab1-images-data` с драйвером local. Первый контейнер: `a92f56c2676678d138e69d921ac10918f596d7c055c5f45e98c7741d2977867f`; после stop/rm создан `5cb0a3c228fe66ae94accd00dca6b9b6997d11a229f54c605754ecf081db92ca`. Оба подключали тот же том к `/lab-data`, RW=true, Source=`/var/lib/docker/volumes/lab1-images-data/_data`. В `/lab-data/lab1-proof.txt` записана строка `volume-proof`; после пересоздания точная проверка содержимого прошла. Новый контейнер затем остановлен и удалён, а docker volume inspect подтвердил существование тома.
+
+Volume — отдельное управляемое Docker хранилище, подключённое через mount, а не writable layer контейнера. Данные в этом опыте находятся за пределами жизненного цикла удаляемого writable layer. Если подключить другой новый том, по пути монтирования будет видно его пустое содержимое, а прежние данные останутся в старом томе. Все практические проверки части 6 и проверка понимания завершены: оба образа работают, размеры/слои/кэш измерены, writable layer исчез после удаления контейнера, named volume сохранил данные после пересоздания. Пользователь правильно объяснил, что файл в /lab-data хранится в отдельном подключённом томе. Том lab1-images-data оставлен на сервере для защиты.
+
+eruano@eruanosrv:~/lab1$ sudo env BUILDKIT_PROGRESS=plain docker build -f Dockerfile.single -t lab1-api:single .
+
+eruano@eruanosrv:~/lab1$ sudo env BUILDKIT_PROGRESS=plain docker build -f Dockerfile -t lab1-api:multi .
+
+![alt text]({82A6328C-AC8C-426A-B4A8-A633D775D13C}.png)
+
+
+eruano@eruanosrv:~/lab1$ sudo docker image inspect lab1-api:single lab1-api:multi \
+  --format '{{json .RepoTags}} User={{.Config.User}} Entrypoint={{json .Config.Entrypoint}} Ports={{json .Config.ExposedPorts}}'
+["lab1-api:single"] User=1000:1000 Entrypoint=["/lab1-serv"] Ports={"8080/tcp":{}}
+["lab1-api:multi"] User=1000:1000 Entrypoint=["/lab1-serv"] Ports={"8080/tcp":{}}
+![alt text]({C8B2ED0D-5C5B-4CAD-977B-E0F84561A821}.png)
+
+![alt text]({9F153B32-E711-4445-97A5-38040391AE98}.png)
+
+Слои сингла:
+![alt text]({A6A9516E-65ED-442D-9F35-3703BE250539}.png)
+
+Слои мультистейджа:
+![alt text]({6ACA4FE7-F2A0-4587-B6CC-99763F194F4A}.png)
+
+
+Кэш сингл сборки:
+
+![alt text]({F7985A83-3A8B-4D1E-9D7E-2C543C9ACC1B}.png)
+
+Кэш мультистейдж сборки:
+
+![alt text]({1C06D294-F496-4816-94DD-A3E4C4686DA9}.png)
+
+
+![alt text]({991E89E8-4831-4A3D-A22C-A81AB9EC480F}.png)
+
+ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf8820b68f595c695e4a9
+
+![alt text]({0AD063FB-E2AF-45EE-8563-27170ABE5F11}.png)
+
+![alt text]({107E6099-5A22-45FC-BFB7-79908BFADA30}.png)
+
+### Тома:
+
+![alt text]({F625CB12-63B5-4562-881C-4BDFCC7B1298}.png)
 
 ## Часть 7. GVisor и границы изоляции
 
