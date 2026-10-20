@@ -288,6 +288,10 @@ ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf8820b68f595c695e4a9
 
 ![alt text]({D7930776-74F3-4212-9FBE-4F4E087424CE}.png)
 
+Убил процесс:
+
+![alt text]({4AF7BCC9-AB2F-4615-AA43-9CBD773946C5}.png)
+
 ### Исходный замер мониторинга
 
 Python `/usr/bin/python3`, версия 3.13.5. Контейнер `lab1-gvisor` running, sandbox PID 1792355; cgroup `system.slice/docker-c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b.scope`.
