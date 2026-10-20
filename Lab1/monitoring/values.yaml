@@ -43,6 +43,16 @@ prometheus:
     retention: 6h
     retentionSize: 512MB
     walCompression: true
+    # IP reported by docker inspect; update if lab1-cadvisor is recreated.
+    additionalScrapeConfigs:
+      - job_name: lab1-host-cadvisor
+        scrape_interval: 15s
+        static_configs:
+          - targets: ["172.18.0.3:8080"]
+        metric_relabel_configs:
+          - source_labels: [name]
+            regex: lab1-gvisor
+            action: keep
     resources:
       requests:
         cpu: 100m
