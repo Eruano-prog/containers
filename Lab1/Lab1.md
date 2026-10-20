@@ -256,21 +256,58 @@ ac3fc853b8aacbed59df0db809c1ffcfddacc24486aaf8820b68f595c695e4a9
 
 Пользователь остановил оба тестовых контейнера; последующий `docker ps` показал пустой список. Проверка `/etc/docker/daemon.json`: файл отсутствует.
 
-[Подготовка gVisor](part7-gvisor.md) содержит команды добавления официального apt-репозитория, установки `runsc`, проверки созданной конфигурации и применения её перезапуском Docker. Пакет установлен, запуск через gVisor ещё не выполнен; сравнение изоляции и выводы будут добавлены по фактическим результатам.
+[Подготовка gVisor](part7-gvisor.md) содержит команды добавления официального apt-репозитория, установки `runsc`, проверки созданной конфигурации и применения её перезапуском Docker. Пакет установлен, запуск через gVisor впоследствии подтверждён; сравнение изоляции и выводы будут добавлены по фактическим результатам.
 
-Подтверждена установка пакета `runsc 20261012.0`: `runsc version release-20261012.0`, OCI spec `1.2.1`. Сразу после установки автоматическая регистрация не произошла: `/etc/docker/daemon.json` отсутствовал, Docker `active`, `Default=runc`, runtime `runsc` не перечислен. Проверка `dockerd --validate` завершилась ошибкой отсутствия файла, поэтому перезапуск после `&&` не выполнялся. Причина поведения установщика не установлена. Затем пользователь выполнил `sudo runsc install`: создана запись `runtimes.runsc.path=/usr/bin/runsc` в `daemon.json`. Проверка: `configuration OK`; после перезапуска Docker `active`, `Default=runc`, runtime `runsc` зарегистрирован. В объявленных параметрах runtime `platform=systrap`; фактический запуск приложения пока не проверен. Подготовлены команды запуска `lab1-api:multi` с `--runtime=runsc`, проверки HTTP и процессов хоста.
+Подтверждена установка пакета `runsc 20261012.0`: `runsc version release-20261012.0`, OCI spec `1.2.1`. Сразу после установки автоматическая регистрация не произошла: `/etc/docker/daemon.json` отсутствовал, Docker `active`, `Default=runc`, runtime `runsc` не перечислен. Проверка `dockerd --validate` завершилась ошибкой отсутствия файла, поэтому перезапуск после `&&` не выполнялся. Причина поведения установщика не установлена. Затем пользователь выполнил `sudo runsc install`: создана запись `runtimes.runsc.path=/usr/bin/runsc` в `daemon.json`. Проверка: `configuration OK`; после перезапуска Docker `active`, `Default=runc`, runtime `runsc` зарегистрирован. В объявленных параметрах runtime `platform=systrap`; на этом этапе фактический запуск приложения ещё не был проверен. Далее подготовлены команды запуска `lab1-api:multi` с `--runtime=runsc`, проверки HTTP и процессов хоста.
 
 ![alt text]({42575D8B-DCC2-48B3-BDD8-92F0FEC9CFE4}.png)
 
 
-Подтверждён запуск `lab1-api:multi` через `runsc`: контейнер `c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b`, Status=running, OOMKilled=false, Error пустой. Лог приложения: PID=1. HTTP на `127.0.0.1:8083/health`: 200 OK, тело `ok`. Docker State.Pid=1792355; на хосте это `runsc-sandbox` (UID 0), а не обычный процесс `/lab1-serv`. Также видны `runsc-gofer` PID 1792349, `runsc-fd-parking` и процессы `[gvisor_sentry]`. Командная строка sandbox содержит `--systemd-cgroup=true`, `--cpu-quota 50000`, `--cpu-period 100000`, `--total-memory 134217728`. Эти аргументы не заменяют чтение фактических лимитов cgroup. UID sandbox не является UID приложения внутри gVisor.
+Подтверждён запуск `lab1-api:multi` через `runsc`: контейнер `c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b`, Status=running, OOMKilled=false, Error пустой. Лог приложения: PID=1. HTTP на `127.0.0.1:8083/health`: 200 OK, тело `ok`. Docker State.Pid=1792355; на хосте это `runsc-sandbox` (UID 0), а не обычный процесс `/lab1-serv`. Также видны `runsc-gofer` PID 1792349, `runsc-fd-parking` и процессы `[gvisor_sentry]`. Командная строка sandbox содержит `--systemd-cgroup=true`, `--cpu-quota 50000`, `--cpu-period 100000`, `--total-memory 134217728`. Пользователь затем прочитал cgroup `/sys/fs/cgroup/system.slice/docker-c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b.scope`: `memory.max=134217728`, `memory.swap.max=0`, `cpu.max=50000 100000`, `pids.max=64`. Настройки лимитов подтверждены чтением файлов, отдельный нагрузочный опыт под gVisor не выполнялся. UID sandbox не является UID приложения внутри gVisor.
 
 ![alt text]({CC244158-A2A1-4651-88D6-D6F57D6D9526}.png)
 
 
 ## Часть 8. Мониторинг
 
-Предстоит подготовить дашборд памяти, CPU и throttling; выбрать три метрики для алертов и обосновать, какие проблемы они обнаруживают.
+Подготовлен [план мониторинга и исходного замера](part8-monitoring.md). Предложение самописного CSV/HTML-мониторинга отозвано после проверки связи с лабораторной 2. Общий стек курса — Prometheus/Grafana/Alertmanager; лабораторная 2 разворачивает его в Kubernetes через Helm. Самописный сборщик и рендерер не реализованы и не требуются заданием. Способ подключения метрик внешнего Docker-контейнера к стеку предстоит определить по окружению. Нужно записать память, CPU и throttling во времени, собрать дашборд, выбрать три метрики под алерты и обосновать последствия. Выполнение мониторинга пока не подтверждено.
+
+
+### Исходный замер мониторинга
+
+Python `/usr/bin/python3`, версия 3.13.5. Контейнер `lab1-gvisor` running, sandbox PID 1792355; cgroup `system.slice/docker-c7031988bd1c9c91e90b222a4db42a2376bfa38c72a2cb023192d7e116181f2b.scope`.
+
+| Показатель | Получено |
+|---|---:|
+| memory.current | 25235456 байт (24,07 МиБ, 18,80% лимита) |
+| memory.max | 134217728 байт |
+| memory.events | low/high/max/oom/oom_kill/oom_group_kill — все 0 |
+| cpu.max | 50000 100000 |
+| usage_usec | 5152759 |
+| user_usec / system_usec | 4033382 / 1119376 |
+| nice_usec | 40000 |
+| nr_periods / nr_throttled | 4326 / 1 |
+| throttled_usec | 156957 |
+| nr_bursts / burst_usec | 0 / 0 |
+| pids.current / pids.max | 28 / 64 |
+
+Это один замер: CPU-время и throttling накоплены за время существования cgroup. Текущая загрузка и доля периодов throttling за выбранный интервал пока не вычислены. 28 задач cgroup не означают 28 экземпляров HTTP-сервиса. Нагрузка на этом шаге не включалась.
+
+Подготовка общего стека: Kubernetes/Helm отсутствуют. Сервер: 16 логических CPU, 15 GiB RAM (14 GiB available); свободно 27 GiB на / и 9,4 GiB на /var. Docker 26.1.5, cgroup v2/systemd, default runtime runc; lab1-gvisor работает. Подготовлены [команды установки и создания kind](part8-cluster.md); результат установки получен и приведён ниже.
+
+### Учебный Kubernetes-кластер готов
+
+Подтверждено пользователем: kind `v0.33.0`, kubectl `v1.35.8` (Kustomize `v5.7.1`), Helm `v4.3.1+gc0d08d0`. Создание `lab1-monitoring` успешно, Ready after 15s. Узел `lab1-monitoring-control-plane` — `Ready`, Kubernetes `v1.35.8`, IP `172.18.0.2`, containerd `2.3.4`, ядро `6.12.111+deb13-amd64`. Все девять системных подов `Running`, перезапусков 0 в предоставленном замере. После создания на `/var` свободно 7,5 GiB, занято 32%. Prometheus/Grafana/Alertmanager пока не установлены.
+
+### Основа мониторинга: подготовлены конфигурации
+
+Созданы [Helm values](monitoring/values.yaml) и [инструкция установки](monitoring/README.md) для kube-prometheus-stack 92.10.1: Prometheus, Grafana, Alertmanager. Хранение Prometheus — 6h, retentionSize 512MB; PVC Prometheus/Grafana/Alertmanager — 1Gi/256Mi/128Mi соответственно. Внешний cAdvisor и метрики lab1-gvisor ещё не подключены. Пользователь попросил вопросы по Kubernetes/Helm оставить для лабораторной 2; пояснение об узле kind и kubeconfig дано без проверки знаний. Установка Helm-релиза впоследствии подтверждена (см. ниже); пользователь впоследствии подтвердил вход в Grafana через браузер.
+
+### Helm-релиз мониторинга установлен
+
+По выводу пользователя от 20.10.2026: `lab1`, namespace `monitoring`, revision 1, `deployed`, chart `kube-prometheus-stack-92.10.1`, app version оператора `v0.94.1`. Все шесть подов готовы и `Running`, перезапусков 0. PVC Prometheus 1Gi, Grafana 256Mi и Alertmanager 128Mi — `Bound`, StorageClass `standard`. На `/var` свободно 5,4 GiB, занято 51%. Следующий шаг — браузерный доступ к Grafana; внешний cAdvisor и метрики `lab1-gvisor` ещё не подключены.
+
+Пользователь подтвердил успешный вход в Grafana через SSH-туннель. Подготовлен [этап подключения cAdvisor хоста](monitoring/cadvisor.md) для CPU, памяти и throttling внешнего `lab1-gvisor`. cAdvisor и его scrape Prometheus пока не подтверждены; готовность Grafana не означает наличие метрик лабораторного контейнера.
 
 ## Материалы для защиты
 
